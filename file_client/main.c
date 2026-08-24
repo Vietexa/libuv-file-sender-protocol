@@ -43,6 +43,12 @@ void on_write_end(uv_write_t *req, int status) {
     uint64_t buf_len = 0;
 
     uint8_t *send_data = prepare_buffer(ctx, &buf_len);
+
+    while (!send_data){
+        buf_len = 0;
+        send_data = prepare_buffer(ctx, &buf_len);
+    }
+
     uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
 
     uv_write_t *write_req = malloc(sizeof(*write_req));
@@ -76,6 +82,11 @@ void on_connect(uv_connect_t *req, int status) {
 
     uint64_t buf_len = 0;
     uint8_t *send_data = prepare_buffer(ctx, &buf_len);
+
+    while (!send_data){
+      buf_len = 0;
+      send_data = prepare_buffer(ctx, &buf_len);
+    }
 
     uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
 

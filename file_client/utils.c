@@ -28,7 +28,7 @@ return true;
 
 }
 
-void get_file(app_ctx_t *ctx, char *file_name){
+bool get_file(app_ctx_t *ctx, char *file_name){
 
 ctx->file_buf_len = 0;
 
@@ -36,7 +36,7 @@ FILE *file_to_send = fopen(file_name, "rb");
 
 if (!file_to_send){
     perror("fopen");
-    return;
+    return false;
 }
 
 while (1){
@@ -46,7 +46,7 @@ while (1){
 
         if (status == false){
             fclose(file_to_send);
-            return;
+            return false;
        } 
     } 
     size_t available = ctx->file_buf_capacity - ctx->file_buf_len;
@@ -56,17 +56,17 @@ while (1){
     if (bytes_read < available){
 
         if (feof(file_to_send)) {
-            break;
+           fclose(file_to_send);
+           return true;
         }
 
         if (ferror(file_to_send)) {
             perror("file");
-            break;
+            fclose(file_to_send);
+            return false;
             }
     }
 }
-
-fclose(file_to_send);
 
 }
 
@@ -117,6 +117,11 @@ uint8_t *prepare_buffer(app_ctx_t *ctx, uint64_t *buf_length){
     fgets(file_path,sizeof(file_path), stdin);
     file_path[strcspn(file_path, "\n")] = '\0';
 
+    if (file_path[0] == '\0'){
+        fprintf(stderr, "No name or path entered!\n");
+        return NULL;
+    }
+
     char *file_name = strrchr(file_path, '/');
 
     if (file_name) {
@@ -131,7 +136,9 @@ uint8_t *prepare_buffer(app_ctx_t *ctx, uint64_t *buf_length){
 
     printf("File Path: %s, File Name: %s\n", file_path, file_name);
 
-    get_file(ctx, file_path);
+     if (!get_file(ctx, file_path)){
+        return NULL;
+     }
 
     uint8_t total_file_bytes[8]; // amount of bytes allocated for the file
 
