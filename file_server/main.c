@@ -75,8 +75,10 @@ void on_write_end(uv_write_t *req, int status) {
         
         ctx->file_req.file_name_length = 0;
         ctx->file_req.f_n_header_len_conv = 0;
+        ctx->file_req.f_n_header_length = 0;
 
         ctx->file_send.file_buf_len = 0;
+        ctx->selected_mode = 0;
 
 }
 

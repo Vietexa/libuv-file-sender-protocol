@@ -8,7 +8,7 @@
 
 void on_write_end(uv_write_t *req, int status);
 
-static void reprompt_user(app_ctx_t *ctx, uv_stream_t *server){
+void reprompt_user(app_ctx_t *ctx, uv_stream_t *server){
     
     int mode = 0;
 
@@ -325,6 +325,7 @@ void parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, cons
             app_context->network_file.file_name_bytes_cp = 0;
             app_context->network_file.string_copied = false;
             app_context->network_file.file_name_header_lenght = 0;
+            app_context->network_file.mode = 0;
 
             reprompt_user(app_context, server);
 
