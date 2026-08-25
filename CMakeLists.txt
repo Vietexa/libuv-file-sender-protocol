@@ -15,6 +15,7 @@ FetchContent_MakeAvailable(libuv)
 add_executable(file_client
                file_client/main.c
                file_client/utils.c
+               file_client/file.c
                )
 
 
@@ -23,7 +24,9 @@ target_link_libraries(file_client uv)
 add_executable(file_server 
                file_server/main.c
                file_server/alloc.c
-               file_server/utils.c)
+               file_server/utils.c
+               file_server/file.c
+               )
                
 target_link_libraries(file_server uv)
 

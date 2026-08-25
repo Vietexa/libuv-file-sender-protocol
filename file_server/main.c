@@ -9,7 +9,7 @@
 
 #include "include/alloc.h"
 #include "include/data_structures.h"
-#include "include/utils.h"
+#include "include/file.h"
 
 #define DEFAULT_PORT 7000
 #define DEFAULT_BACKLOG 128
@@ -62,6 +62,23 @@ void echo_write(uv_write_t *req, int status) {
     free_write_req(req);
 }
 
+void on_write_end(uv_write_t *req, int status) {
+    app_ctx_t *ctx = req->handle->data;
+    if (status < 0) {
+        fprintf(stderr, "write error: %s\n", uv_strerror(status));
+    }
+        free(req->data);
+        free(req);
+        free(ctx->file_send.file_buf);
+        free(ctx->file_req.file_name);
+        
+        ctx->file_req.file_name_length = 0;
+        ctx->file_req.f_n_header_len_conv = 0;
+
+        ctx->file_send.file_buf_len = 0;
+
+}
+
 void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     app_ctx_t *app_context = client->data;
 
@@ -75,104 +92,9 @@ void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
         return;
         
     }
-
-    size_t bytes_offset = 0;
-
-    if (app_context->network_file.header_length < 8){
-        size_t needed_bytes = 8 - app_context->network_file.header_length;
-        size_t bytes_to_copy = (size_t)nread < needed_bytes ? nread : needed_bytes;
-        memcpy(app_context->network_file.header + app_context->network_file.header_length,
-         buf->base, bytes_to_copy);
-        app_context->network_file.header_length += bytes_to_copy;
-        bytes_offset = bytes_to_copy;
-    }
-
-    if (app_context->network_file.file_name_header_lenght < 4 &&
-         app_context->network_file.header_length == 8){
-
-        size_t needed_bytes = 4 - app_context->network_file.file_name_header_lenght;
-        size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
-        memcpy(app_context->network_file.file_name_header +
-             app_context->network_file.file_name_header_lenght, buf->base + bytes_offset, bytes_to_copy);
-        app_context->network_file.file_name_header_lenght += bytes_to_copy;
-        bytes_offset += bytes_to_copy;
-
-    }
-
-
-    if (!app_context->network_file.file_capacity && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4) {
-        app_context->network_file.file_capacity = read_u64_be(app_context->network_file.header);
-        app_context->network_file.file = malloc(app_context->network_file.file_capacity);
-
-        app_context->network_file.file_name_capacity = read_u32_be(app_context->network_file.file_name_header);
-        // and our file_name is an array of char of 255 bytes so no need to allocate on the heap
-
-    }
-
-    if(!app_context->network_file.string_copied && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4){
-        size_t needed_bytes = app_context->network_file.file_name_capacity - app_context->network_file.file_name_bytes_cp;
-         size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
-
-        memcpy(app_context->network_file.file_name + app_context->network_file.file_name_bytes_cp,
-             buf->base + bytes_offset, bytes_to_copy);
-
-        app_context->network_file.file_name_bytes_cp += bytes_to_copy;
-
-        if (app_context->network_file.file_name_capacity == app_context->network_file.file_name_bytes_cp){
-            app_context->network_file.string_copied = true;
-        }
-        bytes_offset += bytes_to_copy;
-    }
-
-        
-
-    if (app_context->network_file.file_length < app_context->network_file.file_capacity &&
-         app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied){
-
-            size_t remaining = app_context->network_file.file_capacity - app_context->network_file.file_length;
-            size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
-
-
-            memcpy(app_context->network_file.file + app_context->network_file.file_length, buf->base + bytes_offset, copy_amount);
-            app_context->network_file.file_length += copy_amount;
-    }
-
-    if ( app_context->network_file.file_capacity > 0 && app_context->network_file.file_length == app_context->network_file.file_capacity &&  app_context->network_file.header_length == 8 && 
-        app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied ){
-          
-            printf("File name: %s\n", app_context->network_file.file_name);
-
-            FILE *file = fopen(app_context->network_file.file_name, "wb");
-
-          if (!file){
-            perror("fopen");
-            return;
-          }
-
-           size_t written = fwrite(app_context->network_file.file, 1, app_context->network_file.file_length, file);
-
-        if (written != app_context->network_file.file_length) {
-            perror("fwrite");
-            fclose(file);
-            free(buf->base);
-            return;
-            }
-
-        fclose(file);
-
-        free(app_context->network_file.file);
-        app_context->network_file.file = NULL;
-        app_context->network_file.file_length = 0;
-        app_context->network_file.file_capacity = 0;
-        app_context->network_file.header_length = 0;
-        app_context->network_file.file_name_capacity = 0;
-        app_context->network_file.file_name_bytes_cp = 0;
-        app_context->network_file.string_copied = false;
-        app_context->network_file.file_name_header_lenght = 0;
-
-    }
-
     
+    process_file(app_context, client, buf, nread);
+        
     free(buf->base);
 }
 
@@ -218,6 +140,8 @@ void on_new_connection(uv_stream_t *server, int status) {
 
 int main(void) {
     app_ctx_t app_ctx = {0};
+    app_ctx.file_send.file_buf_capacity = 5000;
+    app_ctx.file_send.file_buf = malloc(app_ctx.file_send.file_buf_capacity);
     app_ctx.clients.client_capacity = 1;
     app_ctx.clients.peers = calloc(app_ctx.clients.client_capacity,
                                    sizeof(*app_ctx.clients.peers));

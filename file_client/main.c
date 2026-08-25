@@ -1,13 +1,14 @@
-#include "utils.h"
 #include "uv.h"
+
+#include "app_ctx.h"
+#include "file.h"
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <uv/unix.h>
 #include "stdbool.h"
-#include "app_ctx.h"
+
 
 
 void on_close(uv_handle_t *handle) {
@@ -19,6 +20,22 @@ void on_close(uv_handle_t *handle) {
 
 void echo_read(uv_stream_t *server, ssize_t nread, const uv_buf_t* buf) {
 
+    app_ctx_t *ctx = server->data;
+
+     if (nread < 0) {
+
+        if (nread != UV_EOF)
+            fprintf(stderr, "Read error %s\n", uv_err_name(nread));
+
+        free(buf->base);
+        uv_close((uv_handle_t*)server, on_close);
+        return;
+        
+    }
+
+    parse_file(ctx, server, nread, buf);
+    
+    free(buf->base);
 }
 
 void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
@@ -40,21 +57,52 @@ void on_write_end(uv_write_t *req, int status) {
 
     free(old_send_data);
 
-    uint64_t buf_len = 0;
+    int mode = 0;
 
-    uint8_t *send_data = prepare_buffer(ctx, &buf_len);
-
-    while (!send_data){
-        buf_len = 0;
-        send_data = prepare_buffer(ctx, &buf_len);
+    while (!select_mode(&mode)){
+        select_mode(&mode);
     }
 
-    uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
+    if (mode == 1){
 
-    uv_write_t *write_req = malloc(sizeof(*write_req));
-    write_req->data = send_data;
+        uint64_t buf_len = 0;
+        uint8_t *send_data = prepare_buffer(ctx, &buf_len);
 
-    uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+        while (!send_data){
+            buf_len = 0;
+            send_data = prepare_buffer(ctx, &buf_len);
+        }
+
+        uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = send_data;
+
+
+        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+
+    }
+
+    else if (mode == 2){
+
+        int req_length = 0;
+
+        while(!request_file(ctx, &req_length)){
+            request_file(ctx, &req_length);
+        }
+
+
+        uv_buf_t send_buffer = uv_buf_init((char *)ctx->receive_file.receive_buf, req_length);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = ctx->receive_file.receive_buf;
+
+
+        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+
+
+    }
+
 
     free(req);
 
@@ -80,21 +128,52 @@ void on_connect(uv_connect_t *req, int status) {
 
     ctx->tcp->data = ctx;
 
-    uint64_t buf_len = 0;
-    uint8_t *send_data = prepare_buffer(ctx, &buf_len);
+    int mode = 0;
 
-    while (!send_data){
-      buf_len = 0;
-      send_data = prepare_buffer(ctx, &buf_len);
+    while (!select_mode(&mode)){
+        select_mode(&mode);
     }
 
-    uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
+    if (mode == 1){
 
-    uv_write_t *write_req = malloc(sizeof(*write_req));
-    write_req->data = send_data;
+        uint64_t buf_len = 0;
+        uint8_t *send_data = prepare_buffer(ctx, &buf_len);
+
+        while (!send_data){
+            buf_len = 0;
+            send_data = prepare_buffer(ctx, &buf_len);
+        }
+
+        uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = send_data;
 
 
-    uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+
+    }
+
+    else if (mode == 2){
+
+        int req_length = 0;
+
+        while(!request_file(ctx, &req_length)){
+            request_file(ctx, &req_length);
+        }
+
+
+        uv_buf_t send_buffer = uv_buf_init((char *)ctx->receive_file.receive_buf, req_length);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = ctx->receive_file.receive_buf;
+
+
+        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
+
+
+    }
+
     
     uv_read_start((uv_stream_t *)ctx->tcp, alloc_buffer, echo_read);
 
