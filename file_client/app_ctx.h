@@ -26,6 +26,7 @@ typedef struct network_file_s {
     char file_name[255];
     uint32_t file_name_bytes_cp;
     bool string_copied;
+    uint8_t mode;
 } network_file_t;
 
 

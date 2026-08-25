@@ -63,14 +63,15 @@ void echo_write(uv_write_t *req, int status) {
 }
 
 void on_write_end(uv_write_t *req, int status) {
+    printf("on_write_end called, status=%d\n", status);
     app_ctx_t *ctx = req->handle->data;
     if (status < 0) {
         fprintf(stderr, "write error: %s\n", uv_strerror(status));
     }
         free(req->data);
         free(req);
-        free(ctx->file_send.file_buf);
         free(ctx->file_req.file_name);
+        ctx->file_req.file_name = NULL;
         
         ctx->file_req.file_name_length = 0;
         ctx->file_req.f_n_header_len_conv = 0;

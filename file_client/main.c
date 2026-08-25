@@ -57,53 +57,6 @@ void on_write_end(uv_write_t *req, int status) {
 
     free(old_send_data);
 
-    int mode = 0;
-
-    while (!select_mode(&mode)){
-        select_mode(&mode);
-    }
-
-    if (mode == 1){
-
-        uint64_t buf_len = 0;
-        uint8_t *send_data = prepare_buffer(ctx, &buf_len);
-
-        while (!send_data){
-            buf_len = 0;
-            send_data = prepare_buffer(ctx, &buf_len);
-        }
-
-        uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
-
-        uv_write_t *write_req = malloc(sizeof(*write_req));
-        write_req->data = send_data;
-
-
-        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
-
-    }
-
-    else if (mode == 2){
-
-        int req_length = 0;
-
-        while(!request_file(ctx, &req_length)){
-            request_file(ctx, &req_length);
-        }
-
-
-        uv_buf_t send_buffer = uv_buf_init((char *)ctx->receive_file.receive_buf, req_length);
-
-        uv_write_t *write_req = malloc(sizeof(*write_req));
-        write_req->data = ctx->receive_file.receive_buf;
-
-
-        uv_write(write_req, req->handle, &send_buffer, 1, on_write_end);
-
-
-    }
-
-
     free(req);
 
     
@@ -131,7 +84,6 @@ void on_connect(uv_connect_t *req, int status) {
     int mode = 0;
 
     while (!select_mode(&mode)){
-        select_mode(&mode);
     }
 
     if (mode == 1){
@@ -159,7 +111,6 @@ void on_connect(uv_connect_t *req, int status) {
         int req_length = 0;
 
         while(!request_file(ctx, &req_length)){
-            request_file(ctx, &req_length);
         }
 
 

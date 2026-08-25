@@ -41,7 +41,7 @@ if (!file_to_send){
     perror("fopen");
     return false;
 }
-
+printf("get_file: Opened the file\n");
 while (1){
 
     if (ctx->file_send.file_buf_len >= ctx->file_send.file_buf_capacity){
@@ -56,10 +56,13 @@ while (1){
     size_t bytes_read = fread(ctx->file_send.file_buf + ctx->file_send.file_buf_len,sizeof(uint8_t),available , file_to_send);
     ctx->file_send.file_buf_len += bytes_read;
 
+    printf("get_file: fread returned %zu\n", bytes_read);
+
     if (bytes_read < available){
 
         if (feof(file_to_send)) {
            fclose(file_to_send);
+           printf("get_file: Successfully reached EOF\n");
            return true;
         }
 
@@ -90,6 +93,8 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
     }
 
     if (app_context->selected_mode == 1){ // Client mode: Send file
+
+        printf("Mode 1 selected!\n");
 
         if (app_context->network_file.header_length < 8){
             size_t needed_bytes = 8 - app_context->network_file.header_length;
@@ -190,6 +195,8 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
     else if (app_context->selected_mode == 2){ // Client mode: Request file
 
+        printf("Mode 2 selected!\n");
+        
          if (app_context->file_req.f_n_header_length < 4){
             size_t needed_bytes = 4 - app_context->file_req.f_n_header_length;
             size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
@@ -206,13 +213,29 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             size_t needed_bytes = app_context->file_req.f_n_header_len_conv - app_context->file_req.file_name_length;
             size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
 
+            if (app_context->file_req.file_name == NULL){
             app_context->file_req.file_name = malloc(app_context->file_req.f_n_header_len_conv);
+            }
 
             memcpy(app_context->file_req.file_name + app_context->file_req.file_name_length, 
                 buf->base + bytes_offset,bytes_to_copy);
 
             app_context->file_req.file_name_length += bytes_to_copy;
+
+            bytes_offset += bytes_to_copy;
         }
+
+        printf("header bytes: %zu/4\n",
+        app_context->file_req.f_n_header_length);
+
+        printf("expected filename length: %zu\n",
+        app_context->file_req.f_n_header_len_conv);
+
+        printf("received filename length: %zu\n",
+       app_context->file_req.file_name_length);
+
+        printf("nread: %zd, bytes_offset: %zu\n",
+       nread, bytes_offset);
 
         if (app_context->file_req.f_n_header_length == 4 &&
              app_context->file_req.f_n_header_len_conv == app_context->file_req.file_name_length){
@@ -222,11 +245,18 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
                  app_context->file_req.f_n_header_len_conv);
             size_t file_name_len = strlen(file_name) + 1;
 
-            printf("Preparing to look for file %s", file_name);
+            printf("Preparing to look for file %s\n", file_name);
 
             if(!get_file(app_context, file_name)){
                 fprintf(stderr, "There was an error getting the file!\n");
             }
+
+            printf("Finished parsing the file\n");
+            printf("file_buf_len = %zu\n",
+            app_context->file_send.file_buf_len);
+            printf("file_buf_capacity = %zu\n",
+            app_context->file_send.file_buf_capacity);
+
 
             uint8_t mode = 2;
 
@@ -251,7 +281,7 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             uv_write_t *write_req = malloc(sizeof(*write_req));
             write_req->data = send_data;
 
-
+            printf("About to uv_write %zu bytes\n", buf_length);
             uv_write(write_req, client, &send_buffer, 1, on_write_end);
             
         }

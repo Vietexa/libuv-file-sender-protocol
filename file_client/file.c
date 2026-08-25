@@ -6,6 +6,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+void on_write_end(uv_write_t *req, int status);
+
+static void reprompt_user(app_ctx_t *ctx, uv_stream_t *server){
+    
+    int mode = 0;
+
+    
+    while (!select_mode(&mode)){
+    }
+
+    if (mode == 1){
+
+        uint64_t buf_len = 0;
+        uint8_t *send_data = prepare_buffer(ctx, &buf_len);
+
+        while (!send_data){
+            buf_len = 0;
+            send_data = prepare_buffer(ctx, &buf_len);
+        }
+
+        uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = send_data;
+
+
+        uv_write(write_req, server, &send_buffer, 1, on_write_end);
+        
+
+    }
+
+    else if (mode == 2){
+
+        int req_length = 0;
+
+        while(!request_file(ctx, &req_length)){
+        }
+
+
+        uv_buf_t send_buffer = uv_buf_init((char *)ctx->receive_file.receive_buf, req_length);
+
+        uv_write_t *write_req = malloc(sizeof(*write_req));
+        write_req->data = ctx->receive_file.receive_buf;
+
+
+        uv_write(write_req, server, &send_buffer, 1, on_write_end);
+
+
+    }
+ 
+}
+
 static bool double_file_buf_size(app_ctx_t *ctx){
 
 uint64_t old_capacity = ctx->file_buf_capacity;
@@ -177,6 +229,11 @@ void parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, cons
 
     int bytes_offset = 0;
 
+    if (!app_context->network_file.mode && app_context->network_file.header_length < 8){
+        app_context->network_file.mode = buf->base[0];
+        bytes_offset += 1;
+    }
+
     if (app_context->network_file.header_length < 8){
             size_t needed_bytes = 8 - app_context->network_file.header_length;
             size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
@@ -268,6 +325,8 @@ void parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, cons
             app_context->network_file.file_name_bytes_cp = 0;
             app_context->network_file.string_copied = false;
             app_context->network_file.file_name_header_lenght = 0;
+
+            reprompt_user(app_context, server);
 
         }
 
