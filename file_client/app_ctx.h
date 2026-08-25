@@ -3,6 +3,19 @@
 #include <stdbool.h>
 #include <uv.h>
 
+typedef enum {
+    INPUT_MODE,
+    INPUT_SEND_FILE_PATH,
+    INPUT_REQUEST_FILE_NAME
+} input_state_t;
+
+typedef struct user_input_s {
+    input_state_t input_state;
+    char input_buf[1024];
+    size_t input_len;
+    
+} user_input_t;
+
 typedef struct message_buffer_s{
 char *buffer;
 int length;
@@ -30,6 +43,7 @@ typedef struct network_file_s {
 } network_file_t;
 
 
+
 typedef struct app_ctx_s{
 uv_tcp_t *tcp;
 uint8_t *file_buf;
@@ -37,4 +51,6 @@ uint64_t file_buf_capacity;
 uint64_t file_buf_len;
 rcv_file_t receive_file;
 network_file_t network_file;
+user_input_t user_input;
+uv_tty_t stdin_tty;
 } app_ctx_t;

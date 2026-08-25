@@ -8,55 +8,6 @@
 
 void on_write_end(uv_write_t *req, int status);
 
-void reprompt_user(app_ctx_t *ctx, uv_stream_t *server){
-    
-    int mode = 0;
-
-    
-    while (!select_mode(&mode)){
-    }
-
-    if (mode == 1){
-
-        uint64_t buf_len = 0;
-        uint8_t *send_data = prepare_buffer(ctx, &buf_len);
-
-        while (!send_data){
-            buf_len = 0;
-            send_data = prepare_buffer(ctx, &buf_len);
-        }
-
-        uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_len);
-
-        uv_write_t *write_req = malloc(sizeof(*write_req));
-        write_req->data = send_data;
-
-
-        uv_write(write_req, server, &send_buffer, 1, on_write_end);
-        
-
-    }
-
-    else if (mode == 2){
-
-        int req_length = 0;
-
-        while(!request_file(ctx, &req_length)){
-        }
-
-
-        uv_buf_t send_buffer = uv_buf_init((char *)ctx->receive_file.receive_buf, req_length);
-
-        uv_write_t *write_req = malloc(sizeof(*write_req));
-        write_req->data = ctx->receive_file.receive_buf;
-
-
-        uv_write(write_req, server, &send_buffer, 1, on_write_end);
-
-
-    }
- 
-}
 
 static bool double_file_buf_size(app_ctx_t *ctx){
 
@@ -80,7 +31,7 @@ return true;
 
 }
 
-bool get_file(app_ctx_t *ctx, char *file_name){
+bool get_file(app_ctx_t *ctx, const char *file_name){
 
 ctx->file_buf_len = 0;
 
@@ -122,19 +73,9 @@ while (1){
 
 }
 
-uint8_t *prepare_buffer(app_ctx_t *ctx, uint64_t *buf_length){
-    char file_path[1024];
+uint8_t *prepare_buffer(app_ctx_t *ctx, const char *file_path, uint64_t *buf_length){
     
-    printf("Enter the path of the file you want to send:\n");
-    fgets(file_path,sizeof(file_path), stdin);
-    file_path[strcspn(file_path, "\n")] = '\0';
-
-    if (file_path[0] == '\0'){
-        fprintf(stderr, "No name or path entered!\n");
-        return NULL;
-    }
-
-    char *file_name = strrchr(file_path, '/');
+    const char *file_name = strrchr(file_path, '/');
 
     if (file_name) {
         file_name++;  // move past the /
@@ -197,12 +138,7 @@ bool select_mode(int *mode){
 
 }
 
-bool request_file(app_ctx_t *ctx, int *request_len){
-    char file_name[255];
-    printf("Enter the name of the file you want to request:\n");
-    fgets(file_name,sizeof(file_name), stdin);
-
-    file_name[strcspn(file_name, "\n")] = '\0';
+bool request_file(app_ctx_t *ctx, const char *file_name, int *request_len){
 
     if (file_name[0] == '\0'){
         fprintf(stderr, "No name or path entered!\n");
@@ -326,8 +262,6 @@ void parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, cons
             app_context->network_file.string_copied = false;
             app_context->network_file.file_name_header_lenght = 0;
             app_context->network_file.mode = 0;
-
-            reprompt_user(app_context, server);
 
         }
 
