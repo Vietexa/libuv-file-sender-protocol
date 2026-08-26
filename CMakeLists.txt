@@ -16,6 +16,7 @@ add_executable(file_client
                file_client/main.c
                file_client/utils.c
                file_client/file.c
+               file_client/user_input.c
                )
 
 

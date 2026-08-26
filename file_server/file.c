@@ -94,8 +94,6 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
     if (app_context->selected_mode == 1){ // Client mode: Send file
 
-        printf("Mode 1 selected!\n");
-
         if (app_context->network_file.header_length < 8){
             size_t needed_bytes = 8 - app_context->network_file.header_length;
             size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
@@ -195,7 +193,6 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
     else if (app_context->selected_mode == 2){ // Client mode: Request file
 
-        printf("Mode 2 selected!\n");
         
          if (app_context->file_req.f_n_header_length < 4){
             size_t needed_bytes = 4 - app_context->file_req.f_n_header_length;
