@@ -11,6 +11,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(libuv)
 
+set(ENABLE_CJSON_TEST OFF CACHE BOOL "Disable cJSON tests" FORCE)
+
+add_subdirectory(vendor/cjson)
 
 add_executable(file_client
                file_client/main.c
@@ -20,7 +23,7 @@ add_executable(file_client
                )
 
 
-target_link_libraries(file_client uv)
+target_link_libraries(file_client uv cjson)
 
 add_executable(file_server 
                file_server/main.c

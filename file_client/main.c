@@ -2,6 +2,8 @@
 
 #include "app_ctx.h"
 #include "file.h"
+#include "user_input.h"
+#include "utils.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -9,7 +11,9 @@
 #include <string.h>
 #include <unistd.h>
 #include "stdbool.h"
-#include "user_input.h"
+
+
+#include "cjson/cJSON.h"
 
 
 
@@ -143,6 +147,7 @@ void on_connect(uv_connect_t *req, int status) {
 
 int main(void){
 
+
 app_ctx_t ctx = {0};
 
 ctx.file_buf = malloc(4096);
@@ -154,12 +159,47 @@ uv_tcp_init(loop, socket);
 
 ctx.tcp = NULL; 
 
+char json_file[300];
+char address_str[124];
+int port_number = 0;
+
+if(!parse_json_file("config.json", json_file, sizeof(json_file))) return -1;
+
+cJSON *json = cJSON_Parse(json_file);
+const cJSON *address_json = NULL;
+const cJSON *port_json = NULL;
+
+if (!json){
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr)
+        {
+            fprintf(stderr, "Error before: %s\n", error_ptr);
+        }
+        cJSON_Delete(json);
+        return 1;
+    }
+
+address_json = cJSON_GetObjectItemCaseSensitive(json, "address");
+
+if(cJSON_IsString(address_json) && address_json->valuestring){
+    snprintf(address_str, sizeof(address_str), "%s", address_json->valuestring);
+}
+
+port_json = cJSON_GetObjectItemCaseSensitive(json, "port");
+
+if(cJSON_IsNumber(port_json)){
+port_number = port_json->valueint;
+}
+
+cJSON_Delete(json);
+
+printf("Address: %s Port: %d\n",address_str, port_number);
 
 uv_connect_t *connect = malloc(sizeof(uv_connect_t));
 connect->data = &ctx; 
 
 struct sockaddr_in dest;
-uv_ip4_addr("127.0.0.1", 7000, &dest); 
+uv_ip4_addr(address_str, port_number, &dest); 
 
 
 uv_tcp_connect(connect, socket, (const struct sockaddr*)&dest, on_connect);

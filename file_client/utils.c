@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 
 void write_u64_be(uint8_t *buf, uint64_t value)
@@ -41,6 +42,32 @@ uint32_t read_u32_be(const uint8_t *buf)
            ((uint32_t)buf[1] << 16) |
            ((uint32_t)buf[2] << 8)  |
            ((uint32_t)buf[3]);
+}
+
+bool parse_json_file(const char *file_name, char *array, int size){
+
+    FILE *file = fopen(file_name, "rb");
+
+    if (!file){
+        perror("parse_json_file fopen");
+        return false;
+    }
+
+    fread(array,size, 1, file);
+
+    if(ferror(file)){
+        perror("parse_json_file ferror");
+        fclose(file);
+        return false;
+    }
+
+    if (feof(file)){
+        printf("Successfully read json file!\n");
+        fclose(file);
+        return true;
+    }
+
+    return false;
 }
 
 
