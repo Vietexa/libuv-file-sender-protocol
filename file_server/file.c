@@ -7,6 +7,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+void free_resources_mode_1(app_ctx_t *app_context){
+
+            free(app_context->network_file.file);
+            app_context->network_file.file = NULL;
+            app_context->network_file.file_length = 0;
+            app_context->network_file.file_capacity = 0;
+            app_context->network_file.header_length = 0;
+            app_context->network_file.file_name_capacity = 0;
+            app_context->network_file.file_name_bytes_cp = 0;
+            app_context->network_file.string_copied = false;
+            app_context->network_file.file_name_header_lenght = 0;
+            app_context->selected_mode = 0;
+}
+
 void on_write_end(uv_write_t *req, int status);
 
 static bool double_file_buf_size(app_ctx_t *ctx){
@@ -71,23 +85,53 @@ while (1){
             fclose(file_to_send);
             return false;
             }
+        }
     }
-}
 
 }
-
-
 
 
 void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *buf, ssize_t nread){
     size_t bytes_offset = 0;
 
+    /*if(app_context->process_failure){
+            if (app_context->selected_mode == 1){
+             size_t remaining = app_context->network_file.file_capacity - app_context->network_file.file_length;
+
+                if (remaining == 0){
+                    free_resources_mode_1(app_context);
+                    printf("Skipped over file! Everything was set back to zero\n");
+                    app_context->process_failure = false;
+                }
+                else if (remaining != 0){
+                    size_t available = (size_t)nread - bytes_offset;
+                    size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
+                    app_context->network_file.file_length += copy_amount;
+                    bytes_offset += copy_amount;
+
+                    if ((size_t)available < remaining) {
+                        return;
+                    }
+                    else if ((size_t)available >= remaining){
+                        free_resources_mode_1(app_context);
+                        app_context->process_failure = false;
+                    }
+
+                }
+            }
+            else if(app_context->selected_mode == 2){
+
+            }
+    }
+*/
     if (!app_context->selected_mode){
-        app_context->selected_mode = buf->base[0];
+        app_context->selected_mode = buf->base[bytes_offset];
         printf("Mode: %d\n", app_context->selected_mode);
 
-        if (app_context->selected_mode == 0){
-            fprintf(stderr, "Warning: The mode is still 0!\n");
+        if (app_context->selected_mode != 1 && app_context->selected_mode != 2){
+            fprintf(stderr, "Fatal Error: Invalid mode!\n");
+            app_context->process_fatal_error = true;
+            return;
         }
         bytes_offset += 1;
     }
@@ -140,8 +184,6 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             bytes_offset += bytes_to_copy;
         }
 
-        
-
         if (app_context->network_file.file_length < app_context->network_file.file_capacity &&
             app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied){
 
@@ -151,6 +193,7 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
             memcpy(app_context->network_file.file + app_context->network_file.file_length, buf->base + bytes_offset, copy_amount);
             app_context->network_file.file_length += copy_amount;
+            bytes_offset += copy_amount;
         }
 
         if ( app_context->network_file.file_capacity > 0 && app_context->network_file.file_length == app_context->network_file.file_capacity &&  app_context->network_file.header_length == 8 && 
@@ -162,6 +205,7 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
             if (!file){
                 perror("fopen");
+                free_resources_mode_1(app_context);
                 return;
             }
 
@@ -170,25 +214,14 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             if (written != app_context->network_file.file_length) {
                 perror("fwrite");
                 fclose(file);
-                free(buf->base);
+                free_resources_mode_1(app_context);
                 return;
             }
 
             fclose(file);
-
-            free(app_context->network_file.file);
-            app_context->network_file.file = NULL;
-            app_context->network_file.file_length = 0;
-            app_context->network_file.file_capacity = 0;
-            app_context->network_file.header_length = 0;
-            app_context->network_file.file_name_capacity = 0;
-            app_context->network_file.file_name_bytes_cp = 0;
-            app_context->network_file.string_copied = false;
-            app_context->network_file.file_name_header_lenght = 0;
-            app_context->selected_mode = 0;
+            free_resources_mode_1(app_context);
 
         }
-
     }
 
     else if (app_context->selected_mode == 2){ // Client mode: Request file
@@ -222,17 +255,13 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             bytes_offset += bytes_to_copy;
         }
 
-        printf("header bytes: %zu/4\n",
-        app_context->file_req.f_n_header_length);
+        printf("header bytes: %zu/4\n", app_context->file_req.f_n_header_length);
 
-        printf("expected filename length: %zu\n",
-        app_context->file_req.f_n_header_len_conv);
+        printf("expected filename length: %zu\n", app_context->file_req.f_n_header_len_conv);
 
-        printf("received filename length: %zu\n",
-       app_context->file_req.file_name_length);
+        printf("received filename length: %zu\n", app_context->file_req.file_name_length);
 
-        printf("nread: %zd, bytes_offset: %zu\n",
-       nread, bytes_offset);
+        printf("nread: %zd, bytes_offset: %zu\n", nread, bytes_offset);
 
         if (app_context->file_req.f_n_header_length == 4 &&
              app_context->file_req.f_n_header_len_conv == app_context->file_req.file_name_length){
@@ -246,15 +275,22 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
             if(!get_file(app_context, file_name)){
                 fprintf(stderr, "There was an error getting the file!\n");
+                free(app_context->file_req.file_name);
+                app_context->file_req.file_name = NULL;
+                app_context->file_req.file_name_length = 0;
+                app_context->file_req.f_n_header_len_conv = 0;
+                app_context->file_req.f_n_header_length = 0;
+                app_context->file_send.file_buf_len = 0;
+                app_context->selected_mode = 0;
+
+                return;
             }
 
             printf("Finished parsing the file\n");
-            printf("file_buf_len = %zu\n",
-            app_context->file_send.file_buf_len);
-            printf("file_buf_capacity = %zu\n",
-            app_context->file_send.file_buf_capacity);
+            printf("file_buf_len = %zu\n", app_context->file_send.file_buf_len);
+            printf("file_buf_capacity = %zu\n", app_context->file_send.file_buf_capacity);
 
-
+            
             uint8_t mode = 2;
 
             uint8_t file_header[8];
@@ -282,8 +318,6 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
             uv_write(write_req, client, &send_buffer, 1, on_write_end);
             
         }
-    
     }
 
-    
 }

@@ -95,7 +95,14 @@ void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
         return;
         
     }
-    
+
+    if(app_context->process_fatal_error){
+        free(buf->base);
+        uv_close((uv_handle_t*)client, on_close);
+        app_context->process_fatal_error = false;
+        return;
+    }
+
     process_file(app_context, client, buf, nread);
         
     free(buf->base);

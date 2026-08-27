@@ -52,6 +52,7 @@ typedef struct app_ctx_t{
     file_req_t file_req;
     file_send_t file_send;
     uint8_t selected_mode;
+    bool process_fatal_error;
 } app_ctx_t;
 
 typedef struct {
