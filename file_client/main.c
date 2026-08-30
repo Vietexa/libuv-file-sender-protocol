@@ -9,11 +9,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include "stdbool.h"
 
 
-#include "cjson/cJSON.h"
+#include "cJSON.h"
 
 
 
@@ -57,7 +56,7 @@ void stdin_read(uv_stream_t *stream, ssize_t nread, const struct uv_buf_t *buf){
 
 }
 
-void stdin_alloc(uv_handle_t *handle, unsigned long suggested_size, uv_buf_t *buf){
+void stdin_alloc(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf){
     buf->base = malloc(suggested_size);
     buf->len = suggested_size;
 }
@@ -132,7 +131,7 @@ void on_connect(uv_connect_t *req, int status) {
     ctx->tcp->data = ctx;
     
     uv_read_start((uv_stream_t *)ctx->tcp, alloc_buffer, echo_read);
-    uv_tty_init(uv_default_loop(), &ctx->stdin_tty, STDIN_FILENO, 1);
+    uv_tty_init(uv_default_loop(), &ctx->stdin_tty, 0, 1);
 
     ctx->stdin_tty.data = ctx;
     ctx->user_input.input_state = INPUT_MODE;
