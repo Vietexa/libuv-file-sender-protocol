@@ -33,6 +33,6 @@ I'm not going to provide a step by step tutorial on how to build it on Windows b
 2. I made a directory called ``build`` with ``mkdir build``
 3. I did ``cd build`` and then ``cmake ..`` followed by ``make``
 4. I looked for the DLL files of libuv and cjson that got built and put them all in the same directory with the 2 executables
-5. I put the config.json file in the directory and the ran the executables
+5. I put the config.json file in the directory and then ran the executables
 
 
