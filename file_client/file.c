@@ -75,13 +75,20 @@ while (1){
 
 uint8_t *prepare_buffer(app_ctx_t *ctx, const char *file_path, uint64_t *buf_length){
     
+    #ifdef __unix__
     const char *file_name = strrchr(file_path, '/');
+    #endif
+    
+    #ifdef _WIN32
+    const char *file_name = strrchr(file_path, '\\');
+    if (!file_name) file_name = strrchr(file_path, "/");
+    #endif
 
     if (file_name) {
-        file_name++;  // move past the /
+        file_name++;  // move past the / or backslash
     } 
     else {
-    // There was no /, so the input itself is the filename
+    // There was no / or backslash, so the input itself is the filename
     file_name = file_path;
     }
 
