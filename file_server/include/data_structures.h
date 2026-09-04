@@ -33,15 +33,15 @@ typedef struct file_req_s { // used for parsing the mode 2 sent by the client
 } file_req_t;
 
 typedef struct file_send_s{ // used for sending the file the client asked for
-uint64_t file_buf_capacity;
-uint64_t file_buf_len;
-uint8_t *file_buf;
+    uint64_t file_buf_capacity;
+    uint64_t file_buf_len;
+    uint8_t *file_buf;
 } file_send_t;
 
 typedef struct clients_t{
-peer_t **peers;
-int client_count;
-int client_capacity;
+    peer_t **peers;
+    int client_count;
+    int client_capacity;
 } clients_t;
 
 typedef struct app_ctx_t{

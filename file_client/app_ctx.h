@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <sys/types.h>
 #include <uv.h>
 
 typedef enum {
@@ -8,6 +10,12 @@ typedef enum {
     INPUT_SEND_FILE_PATH,
     INPUT_REQUEST_FILE_NAME
 } input_state_t;
+
+typedef enum {
+    MODE_SEND_FILE = 1,
+    MODE_REQUEST_FILE,
+    MODE_RECEIVE_ERROR
+} control_mode_t;
 
 typedef struct user_input_s {
     input_state_t input_state;
@@ -39,12 +47,20 @@ typedef struct network_file_s {
     char file_name[255];
     uint32_t file_name_bytes_cp;
     bool string_copied;
-    uint8_t mode;
 } network_file_t;
+
+typedef struct error_rcv_s {
+uint8_t error_header[4];
+size_t error_header_len;
+uint32_t error_capacity;
+size_t error_len;
+uint8_t *error;
+} error_rcv_t;
 
 
 
 typedef struct app_ctx_s{
+uint8_t mode;
 uv_tcp_t *tcp;
 uint8_t *file_buf;
 uint64_t file_buf_capacity;
@@ -52,5 +68,6 @@ uint64_t file_buf_len;
 rcv_file_t receive_file;
 network_file_t network_file;
 user_input_t user_input;
+error_rcv_t error_rcv;
 uv_tty_t stdin_tty;
 } app_ctx_t;

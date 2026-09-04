@@ -1,6 +1,7 @@
 #include "file.h"
 #include "app_ctx.h"
 #include "utils.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,7 +101,7 @@ uint8_t *prepare_buffer(app_ctx_t *ctx, const char *file_path, uint64_t *buf_len
         return NULL;
      }
 
-    uint8_t mode = 1;
+    uint8_t mode = MODE_SEND_FILE;
 
     uint8_t total_file_bytes[8]; // amount of bytes allocated for the file
 
@@ -124,26 +125,6 @@ uint8_t *prepare_buffer(app_ctx_t *ctx, const char *file_path, uint64_t *buf_len
     return send_data;
 }
 
-bool select_mode(int *mode){
-    printf("Enter what you'd like to do:\n1.Send file\n2.Request file\n");
-    char mode_buf[4];
-    fgets(mode_buf, sizeof(mode_buf), stdin);
-    mode_buf[strcspn(mode_buf, "\n")] = '\0';
-
-    printf("Mode: %s\n", mode_buf);
-
-    int selected_mode = atoi(mode_buf);
-
-    if (selected_mode == 1 || selected_mode == 2){
-        *mode = selected_mode;
-        return true;
-    }
-    else {
-        fprintf(stderr, "Error: Invalid Mode!\n");
-        return false;
-    }
-
-}
 
 bool request_file(app_ctx_t *ctx, const char *file_name, int *request_len){
 
@@ -152,7 +133,7 @@ bool request_file(app_ctx_t *ctx, const char *file_name, int *request_len){
         return false;
     }
 
-    uint8_t mode = 2;
+    uint8_t mode = MODE_REQUEST_FILE;
 
     uint8_t name_len_bytes[4];
     write_u32_be(name_len_bytes, strlen(file_name) + 1);
@@ -168,108 +149,174 @@ bool request_file(app_ctx_t *ctx, const char *file_name, int *request_len){
     return true;
 
 }
-void parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, const uv_buf_t* buf){
+
+static void cleanup_mode_2(app_ctx_t *app_context){
+    free(app_context->network_file.file); // freeing NULL does nothing
+    app_context->network_file.file = NULL;
+    app_context->network_file.file_length = 0;
+    app_context->network_file.file_capacity = 0;
+    app_context->network_file.header_length = 0;
+    app_context->network_file.file_name_capacity = 0;
+    app_context->network_file.file_name_bytes_cp = 0;
+    app_context->network_file.string_copied = false;
+    app_context->network_file.file_name_header_lenght = 0;
+    app_context->mode = 0;
+}
+
+static void cleanup_mode_3(app_ctx_t *app_context){
+    free(app_context->error_rcv.error);
+    app_context->error_rcv.error_header_len = 0;
+    app_context->error_rcv.error_len = 0;
+    app_context->error_rcv.error_capacity = 0;
+    app_context->mode = 0;
+    
+}
+
+// Parse the response of mode request file
+static void parse_mode_2(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, const uv_buf_t* buf, int bytes_offset){
+        
+    if (app_context->network_file.header_length < 8){
+        size_t needed_bytes = 8 - app_context->network_file.header_length;
+        size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
+        memcpy(app_context->network_file.header + app_context->network_file.header_length,
+         buf->base + bytes_offset, bytes_to_copy);
+         app_context->network_file.header_length += bytes_to_copy;
+        bytes_offset += bytes_to_copy;
+    }
+
+    if (app_context->network_file.file_name_header_lenght < 4 &&
+        app_context->network_file.header_length == 8){
+
+        size_t needed_bytes = 4 - app_context->network_file.file_name_header_lenght;
+        size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
+        memcpy(app_context->network_file.file_name_header +
+        app_context->network_file.file_name_header_lenght, buf->base + bytes_offset, bytes_to_copy);
+        app_context->network_file.file_name_header_lenght += bytes_to_copy;
+        bytes_offset += bytes_to_copy;
+
+    }
+
+    if (!app_context->network_file.file_capacity && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4) {
+        app_context->network_file.file_capacity = read_u64_be(app_context->network_file.header);
+        app_context->network_file.file = malloc(app_context->network_file.file_capacity);
+
+        app_context->network_file.file_name_capacity = read_u32_be(app_context->network_file.file_name_header);
+        // and our file_name is an array of char of 255 bytes so no need to allocate on the heap
+
+     }
+
+    if (!app_context->network_file.string_copied && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4){
+        size_t needed_bytes = app_context->network_file.file_name_capacity - app_context->network_file.file_name_bytes_cp;
+        size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
+
+        memcpy(app_context->network_file.file_name + app_context->network_file.file_name_bytes_cp,
+        buf->base + bytes_offset, bytes_to_copy);
+
+        app_context->network_file.file_name_bytes_cp += bytes_to_copy;
+
+        if (app_context->network_file.file_name_capacity == app_context->network_file.file_name_bytes_cp){
+            app_context->network_file.string_copied = true;
+        }
+        bytes_offset += bytes_to_copy;
+    }
+
+    if (app_context->network_file.file_length < app_context->network_file.file_capacity &&
+        app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied){
+
+        size_t remaining = app_context->network_file.file_capacity - app_context->network_file.file_length;
+        size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
+
+
+        memcpy(app_context->network_file.file + app_context->network_file.file_length, buf->base + bytes_offset, copy_amount);
+        app_context->network_file.file_length += copy_amount;
+    }
+
+    if (app_context->network_file.file_capacity > 0 && app_context->network_file.file_length == app_context->network_file.file_capacity &&  app_context->network_file.header_length == 8 && 
+        app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied ){
+            
+        printf("File name: %s\n", app_context->network_file.file_name);
+
+        FILE *file = fopen(app_context->network_file.file_name, "wb");
+
+        if (!file){
+            perror("fopen");
+            return;
+        }
+
+        size_t written = fwrite(app_context->network_file.file, 1, app_context->network_file.file_length, file);
+
+        if (written != app_context->network_file.file_length) {
+            perror("fwrite");
+            fclose(file);
+            free(buf->base);
+            return;
+        }
+
+        fclose(file);
+        cleanup_mode_2(app_context);
+
+        }
+
+}
+
+static void parse_mode_3(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, const uv_buf_t* buf, int bytes_offset){
+    
+    if (app_context->error_rcv.error_header_len < 4){
+        size_t needed_bytes = 4 - app_context->error_rcv.error_header_len;
+        size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
+        memcpy(app_context->error_rcv.error_header +
+        app_context->error_rcv.error_header_len, buf->base + bytes_offset, bytes_to_copy);
+        app_context->error_rcv.error_header_len += bytes_to_copy;
+        bytes_offset += bytes_to_copy;
+    }
+
+    if (!app_context->error_rcv.error_capacity && app_context->error_rcv.error_header_len == 4){
+        app_context->error_rcv.error_capacity = read_u32_be(app_context->error_rcv.error_header);
+        app_context->error_rcv.error = malloc(app_context->error_rcv.error_capacity);
+    }
+
+    if (app_context->error_rcv.error_len < app_context->error_rcv.error_capacity &&
+        app_context->error_rcv.error_header_len == 4 && app_context->error_rcv.error_capacity){
+        
+        size_t remaining = app_context->error_rcv.error_capacity - app_context->error_rcv.error_len;
+        size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
+
+        memcpy(app_context->error_rcv.error + app_context->error_rcv.error_len, buf->base + bytes_offset, copy_amount);
+        app_context->error_rcv.error_len += copy_amount;
+    }
+
+    if (app_context->error_rcv.error_len == app_context->error_rcv.error_capacity &&
+         app_context->error_rcv.error_capacity && app_context->error_rcv.error_header_len == 4){
+            printf("Server sent the following error: %s\n", (char *)app_context->error_rcv.error);
+            cleanup_mode_3(app_context);
+         }
+
+}
+
+bool parse_file(app_ctx_t *app_context, uv_stream_t *server, ssize_t nread, const uv_buf_t* buf){
 
     int bytes_offset = 0;
 
-    if (!app_context->network_file.mode && app_context->network_file.header_length < 8){
-        app_context->network_file.mode = buf->base[0];
+    if (!app_context->mode){
+        app_context->mode = buf->base[0];
         bytes_offset += 1;
     }
 
-    if (app_context->network_file.header_length < 8){
-            size_t needed_bytes = 8 - app_context->network_file.header_length;
-            size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
-            memcpy(app_context->network_file.header + app_context->network_file.header_length,
-             buf->base + bytes_offset, bytes_to_copy);
-            app_context->network_file.header_length += bytes_to_copy;
-            bytes_offset += bytes_to_copy;
-        }
+    switch (app_context->mode){
+        case MODE_REQUEST_FILE:
+        parse_mode_2(app_context, server, nread, buf, bytes_offset);
+        break;
 
-        if (app_context->network_file.file_name_header_lenght < 4 &&
-            app_context->network_file.header_length == 8){
+        case MODE_RECEIVE_ERROR:
+        parse_mode_3(app_context, server, nread, buf, bytes_offset);
+        break;
 
-            size_t needed_bytes = 4 - app_context->network_file.file_name_header_lenght;
-            size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
-            memcpy(app_context->network_file.file_name_header +
-             app_context->network_file.file_name_header_lenght, buf->base + bytes_offset, bytes_to_copy);
-            app_context->network_file.file_name_header_lenght += bytes_to_copy;
-            bytes_offset += bytes_to_copy;
-
-        }
+        default: 
+        fprintf(stderr,"Invalid mode: %d is not a valid mode!\n",app_context->mode);
+        app_context->mode = 0;
+        return false;
+    }
 
 
-        if (!app_context->network_file.file_capacity && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4) {
-            app_context->network_file.file_capacity = read_u64_be(app_context->network_file.header);
-            app_context->network_file.file = malloc(app_context->network_file.file_capacity);
-
-            app_context->network_file.file_name_capacity = read_u32_be(app_context->network_file.file_name_header);
-            // and our file_name is an array of char of 255 bytes so no need to allocate on the heap
-
-         }
-
-        if (!app_context->network_file.string_copied && app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4){
-            size_t needed_bytes = app_context->network_file.file_name_capacity - app_context->network_file.file_name_bytes_cp;
-            size_t bytes_to_copy = (size_t)nread - bytes_offset < needed_bytes ? nread - bytes_offset : needed_bytes;
-
-            memcpy(app_context->network_file.file_name + app_context->network_file.file_name_bytes_cp,
-             buf->base + bytes_offset, bytes_to_copy);
-
-            app_context->network_file.file_name_bytes_cp += bytes_to_copy;
-
-            if (app_context->network_file.file_name_capacity == app_context->network_file.file_name_bytes_cp){
-                app_context->network_file.string_copied = true;
-            }
-            bytes_offset += bytes_to_copy;
-        }
-
-        
-
-        if (app_context->network_file.file_length < app_context->network_file.file_capacity &&
-            app_context->network_file.header_length == 8 && app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied){
-
-            size_t remaining = app_context->network_file.file_capacity - app_context->network_file.file_length;
-            size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
-
-
-            memcpy(app_context->network_file.file + app_context->network_file.file_length, buf->base + bytes_offset, copy_amount);
-            app_context->network_file.file_length += copy_amount;
-        }
-
-        if ( app_context->network_file.file_capacity > 0 && app_context->network_file.file_length == app_context->network_file.file_capacity &&  app_context->network_file.header_length == 8 && 
-            app_context->network_file.file_name_header_lenght == 4 && app_context->network_file.string_copied ){
-            
-            printf("File name: %s\n", app_context->network_file.file_name);
-
-            FILE *file = fopen(app_context->network_file.file_name, "wb");
-
-            if (!file){
-                perror("fopen");
-                return;
-            }
-
-            size_t written = fwrite(app_context->network_file.file, 1, app_context->network_file.file_length, file);
-
-            if (written != app_context->network_file.file_length) {
-                perror("fwrite");
-                fclose(file);
-                free(buf->base);
-                return;
-            }
-
-            fclose(file);
-
-            free(app_context->network_file.file);
-            app_context->network_file.file = NULL;
-            app_context->network_file.file_length = 0;
-            app_context->network_file.file_capacity = 0;
-            app_context->network_file.header_length = 0;
-            app_context->network_file.file_name_capacity = 0;
-            app_context->network_file.file_name_bytes_cp = 0;
-            app_context->network_file.string_copied = false;
-            app_context->network_file.file_name_header_lenght = 0;
-            app_context->network_file.mode = 0;
-
-        }
-
+    return true;
     }

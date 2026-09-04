@@ -1,6 +1,8 @@
 #include "include/file.h"
 #include "include/data_structures.h"
 #include "include/utils.h"
+#include "uv.h"
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -90,40 +92,39 @@ while (1){
 
 }
 
+static void send_err_mode_3(int err_num, app_ctx_t *app_context, uv_stream_t *client){
+    printf("send_err_mode_3 triggered: preparing to send err to client\n");
+    char error[400];
+    snprintf(error, sizeof(error), "fopen failed: %s", strerror(err_num));
+
+    uint8_t mode = 3;
+
+    uint8_t error_header[4];
+
+    int error_len = strlen(error) + 1;
+    write_u32_be(error_header, error_len);
+
+    size_t buf_length = sizeof(mode) + sizeof(error_header) + error_len;
+    
+    uint8_t *send_data = malloc(buf_length);
+
+    memcpy(send_data, &mode, sizeof(mode)); // copy the 1 byte mode field
+    memcpy(send_data + sizeof(mode), error_header, sizeof(error_header)); // copy 4 bytes from the error header
+    memcpy(send_data + sizeof(mode) + sizeof(error_header), error, error_len); // copy the bytes of the error
+    
+    uv_buf_t send_buffer = uv_buf_init((char *)send_data, buf_length);
+
+    uv_write_t *write_req = malloc(sizeof(*write_req));
+    write_req->data = send_data;
+
+    printf("From send_err_mode_3: About to uv_write %zu bytes\n", buf_length);
+    uv_write(write_req, client, &send_buffer, 1, on_write_end);
+
+}
 
 void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *buf, ssize_t nread){
     size_t bytes_offset = 0;
 
-    /*if(app_context->process_failure){
-            if (app_context->selected_mode == 1){
-             size_t remaining = app_context->network_file.file_capacity - app_context->network_file.file_length;
-
-                if (remaining == 0){
-                    free_resources_mode_1(app_context);
-                    printf("Skipped over file! Everything was set back to zero\n");
-                    app_context->process_failure = false;
-                }
-                else if (remaining != 0){
-                    size_t available = (size_t)nread - bytes_offset;
-                    size_t copy_amount = (size_t)nread - bytes_offset < remaining ? nread - bytes_offset : remaining;
-                    app_context->network_file.file_length += copy_amount;
-                    bytes_offset += copy_amount;
-
-                    if ((size_t)available < remaining) {
-                        return;
-                    }
-                    else if ((size_t)available >= remaining){
-                        free_resources_mode_1(app_context);
-                        app_context->process_failure = false;
-                    }
-
-                }
-            }
-            else if(app_context->selected_mode == 2){
-
-            }
-    }
-*/
     if (!app_context->selected_mode){
         app_context->selected_mode = buf->base[bytes_offset];
         printf("Mode: %d\n", app_context->selected_mode);
@@ -275,6 +276,7 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
 
             if(!get_file(app_context, file_name)){
                 fprintf(stderr, "There was an error getting the file!\n");
+                send_err_mode_3(errno, app_context, client);
                 free(app_context->file_req.file_name);
                 app_context->file_req.file_name = NULL;
                 app_context->file_req.file_name_length = 0;
@@ -282,7 +284,6 @@ void process_file(app_ctx_t *app_context, uv_stream_t *client, const uv_buf_t *b
                 app_context->file_req.f_n_header_length = 0;
                 app_context->file_send.file_buf_len = 0;
                 app_context->selected_mode = 0;
-
                 return;
             }
 

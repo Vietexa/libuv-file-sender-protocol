@@ -83,7 +83,12 @@ void echo_read(uv_stream_t *server, ssize_t nread, const uv_buf_t *buf) {
         
     }
 
-    parse_file(ctx, server, nread, buf);
+    if (!parse_file(ctx, server, nread, buf)){
+        fprintf(stderr, "echo_read, Critical error: parse_file failed!\n");
+        free(buf->base);
+        uv_close((uv_handle_t *)server, on_close);
+        return;
+    }
     
     free(buf->base);
 }
